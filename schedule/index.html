@@ -699,7 +699,6 @@
         <div class="dot" data-id="wm-gym-1" onclick="toggleDot(this)"></div>
         <div class="dot" data-id="wm-gym-2" onclick="toggleDot(this)"></div>
         <div class="dot" data-id="wm-gym-3" onclick="toggleDot(this)"></div>
-        <div class="dot" data-id="wm-gym-4" onclick="toggleDot(this)"></div>
       </div>
     </div>
   </div>
@@ -758,6 +757,7 @@
   <!-- FOOTER -->
   <div class="footer">
     <button class="btn btn-reset" onclick="resetDay()">Reset Day</button>
+    <button class="btn btn-reset" onclick="resetWeek()">Reset Week</button>
     <button class="btn btn-submit" onclick="generateSummary()">Submit Day</button>
   </div>
 
@@ -785,50 +785,66 @@
   document.getElementById('todayDate').textContent =
     days[now.getDay()] + ', ' + months[now.getMonth()] + ' ' + now.getDate() + ' ' + now.getFullYear();
 
-  // ── State key per date ────────────────────────────────────
+  // ── State keys ───────────────────────────────────────────
   const stateKey = 'blueprint_' + now.toISOString().slice(0,10);
+  const weekKey = 'blueprint_week_' + getWeekKey();
+
+  function getWeekKey() {
+    const d = new Date(now);
+    d.setHours(0,0,0,0);
+    d.setDate(d.getDate() - d.getDay()); // start of week (Sunday)
+    return d.toISOString().slice(0,10);
+  }
 
   // ── Load saved state ──────────────────────────────────────
   function loadState() {
     try {
+      // Load daily state
       const saved = localStorage.getItem(stateKey);
-      if (!saved) return;
-      const state = JSON.parse(saved);
-
-      document.querySelectorAll('[data-id]').forEach(el => {
-        const id = el.dataset.id;
-        if (!state.checks || state.checks[id] === undefined) return;
-        const val = state.checks[id];
-
-        if (el.classList.contains('dot')) {
-          if (val) el.classList.add('filled');
-        } else if (el.classList.contains('is-flex')) {
-          el.dataset.flexState = val;
-          const cb = el.querySelector('.cb');
-          if (val === 'done') { cb.checked = true; el.classList.add('done'); }
-          else if (val === 'na') { cb.checked = false; el.classList.add('na'); }
-        } else {
-          const cb = el.querySelector('.cb');
-          if (cb && val) {
-            cb.checked = true;
-            if (el.classList.contains('schedule-row')) el.classList.add('done');
+      if (saved) {
+        const state = JSON.parse(saved);
+        document.querySelectorAll('[data-id]').forEach(el => {
+          const id = el.dataset.id;
+          if (el.classList.contains('dot')) return; // handled separately
+          if (!state.checks || state.checks[id] === undefined) return;
+          const val = state.checks[id];
+          if (el.classList.contains('is-flex')) {
+            el.dataset.flexState = val;
+            const cb = el.querySelector('.cb');
+            if (val === 'done') { cb.checked = true; el.classList.add('done'); }
+            else if (val === 'na') { cb.checked = false; el.classList.add('na'); }
+          } else {
+            const cb = el.querySelector('.cb');
+            if (cb && val) {
+              cb.checked = true;
+              if (el.classList.contains('schedule-row')) el.classList.add('done');
+            }
           }
-        }
-      });
+        });
+        if (state.notes) document.getElementById('dailyNotes').value = state.notes;
+      }
 
-      if (state.notes) document.getElementById('dailyNotes').value = state.notes;
+      // Load weekly dots separately
+      const weekSaved = localStorage.getItem(weekKey);
+      if (weekSaved) {
+        const weekState = JSON.parse(weekSaved);
+        document.querySelectorAll('.dot').forEach(dot => {
+          const id = dot.dataset.id;
+          if (weekState[id]) dot.classList.add('filled');
+        });
+      }
     } catch(e) {}
   }
 
   // ── Save state ────────────────────────────────────────────
   function saveState() {
     try {
+      // Save daily state (no dots)
       const checks = {};
       document.querySelectorAll('[data-id]').forEach(el => {
         const id = el.dataset.id;
-        if (el.classList.contains('dot')) {
-          checks[id] = el.classList.contains('filled');
-        } else if (el.classList.contains('is-flex')) {
+        if (el.classList.contains('dot')) return; // saved separately
+        if (el.classList.contains('is-flex')) {
           checks[id] = el.dataset.flexState || 'off';
         } else {
           const cb = el.querySelector('.cb');
@@ -837,6 +853,13 @@
       });
       const notes = document.getElementById('dailyNotes').value;
       localStorage.setItem(stateKey, JSON.stringify({ checks, notes }));
+
+      // Save weekly dots separately
+      const weekState = {};
+      document.querySelectorAll('.dot').forEach(dot => {
+        weekState[dot.dataset.id] = dot.classList.contains('filled');
+      });
+      localStorage.setItem(weekKey, JSON.stringify(weekState));
     } catch(e) {}
   }
 
@@ -888,16 +911,21 @@
 
   // ── Reset ─────────────────────────────────────────────────
   function resetDay() {
-    if (!confirm('Reset all checkboxes for today?')) return;
+    if (!confirm('Reset today\'s checklist? Weekly minimums will NOT be cleared.')) return;
     document.querySelectorAll('.cb').forEach(cb => cb.checked = false);
     document.querySelectorAll('.schedule-row').forEach(r => r.classList.remove('done'));
     document.querySelectorAll('.is-flex').forEach(el => {
       el.dataset.flexState = 'off';
       el.classList.remove('done', 'na');
     });
-    document.querySelectorAll('.dot').forEach(d => d.classList.remove('filled'));
     document.getElementById('dailyNotes').value = '';
     try { localStorage.removeItem(stateKey); } catch(e) {}
+  }
+
+  function resetWeek() {
+    if (!confirm('Reset weekly minimums? Do this after your Sunday recap.')) return;
+    document.querySelectorAll('.dot').forEach(d => d.classList.remove('filled'));
+    try { localStorage.removeItem(weekKey); } catch(e) {}
   }
 
   // ── Generate summary ──────────────────────────────────────
